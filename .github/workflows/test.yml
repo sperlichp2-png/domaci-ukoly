@@ -32,6 +32,12 @@ jobs:
             sleep 25
             adb shell am start -W -n cz.sperlich.domaciukoly/.MainActivity
             sleep 5
+            adb shell run-as cz.sperlich.domaciukoly cat files/ukoly.json > ukoly.json || true
+            adb shell am force-stop cz.sperlich.domaciukoly
+            adb shell run-as cz.sperlich.domaciukoly sh -c "echo '<?xml version=\"1.0\" encoding=\"utf-8\"?><map><boolean name=\"sick\" value=\"true\" /></map>' > shared_prefs/nastaveni.xml" || true
+            adb shell am start -W -n cz.sperlich.domaciukoly/.MainActivity
+            sleep 25
+            adb shell run-as cz.sperlich.domaciukoly cat files/nemocne.json > nemocne.json || true
             adb logcat -d > logcat.txt || true
             adb shell pidof cz.sperlich.domaciukoly > pid.txt || true
             adb exec-out screencap -p > screen.png || true
@@ -51,6 +57,18 @@ jobs:
             exit 1
           fi
           echo "::notice::Aplikace běží, žádný pád."
+          for f in ukoly nemocne; do
+            python3 - "$f.json" <<'PY' > "$f.txt" || echo "nelze přečíst" > "$f.txt"
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          print('chyba:', d.get('lastError'), '| dnů:', len(d.get('days',[])))
+          for day in d.get('days',[])[-6:]:
+              print('==', day['date'], '[' + day.get('week','') + ']')
+              for it in day['items']:
+                  print('   ', it['subject'], '|', it['text'][:90], '|', it.get('link',''))
+          PY
+            echo "::notice title=$f::$(sed 's/%/%25/g' $f.txt | sed ':a;N;$!ba;s/\n/%0A/g')"
+          done
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -58,3 +76,5 @@ jobs:
           path: |
             logcat.txt
             screen.png
+            ukoly.json
+            nemocne.json
