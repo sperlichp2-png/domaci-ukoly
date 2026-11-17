@@ -1,0 +1,41 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'cz.sperlich.domaciukoly'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'cz.sperlich.domaciukoly'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+    }
+
+    // Pevný podpisový klíč, aby šly nové verze instalovat přes starou.
+    signingConfigs {
+        ukoly {
+            storeFile file('ukoly.keystore')
+            storePassword 'domaciukoly'
+            keyAlias 'ukoly'
+            keyPassword 'domaciukoly'
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.ukoly
+        }
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.ukoly
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
