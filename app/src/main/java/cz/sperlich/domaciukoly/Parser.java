@@ -170,6 +170,7 @@ public class Parser {
             s = sm.group(2).trim();
         }
         s = s.replaceAll("[\\s:–—-]+$", "").trim();
+        if (it.subject.isEmpty()) it.subject = guessSubject(s);
         if (s.isEmpty()) {
             if (it.link.isEmpty()) return;
             s = video ? "Video" : "Odkaz";
@@ -180,6 +181,16 @@ public class Parser {
             if (!it.link.isEmpty() && it.link.equals(o.link)) return;
         }
         day.items.add(it);
+    }
+
+    /** Předmět podle učebnice, když není uveden. */
+    static String guessSubject(String s) {
+        String n = strip(s);
+        if (n.contains("matysek") || n.contains("matematik")) return "M";
+        if (n.contains("ziva abeceda") || n.matches(".*\\bza\\b.*") || n.contains("slabik") || n.contains("cten")) return "ČJ";
+        if (n.contains("moje prvni psani") || n.matches(".*\\bmpp\\b.*") || n.contains("pisank")) return "Psaní";
+        if (n.contains("prvouk")) return "PRV";
+        return "";
     }
 
     static String normSubject(String s) {

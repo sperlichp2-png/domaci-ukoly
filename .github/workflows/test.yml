@@ -35,6 +35,8 @@ jobs:
             adb shell run-as cz.sperlich.domaciukoly cat files/ukoly.json > ukoly.json || true
             adb shell am start -W -n cz.sperlich.domaciukoly/.MainActivity --ez setSick true
             sleep 30
+            adb shell run-as cz.sperlich.domaciukoly ls -l files shared_prefs > ls.txt 2>&1 || true
+            adb shell run-as cz.sperlich.domaciukoly cat shared_prefs/nastaveni.xml >> ls.txt 2>&1 || true
             adb shell run-as cz.sperlich.domaciukoly cat files/nemocne.json > nemocne.json || true
             adb logcat -d > logcat.txt || true
             adb shell pidof cz.sperlich.domaciukoly > pid.txt || true
@@ -57,6 +59,7 @@ jobs:
           PY
             echo "::notice title=$f::$(sed 's/%/%25/g' $f.txt | sed ':a;N;$!ba;s/\n/%0A/g')"
           done
+          echo "::notice title=soubory::$(sed 's/%/%25/g' ls.txt | sed ':a;N;$!ba;s/\n/%0A/g')"
           grep -E "ANR in|not responding" logcat.txt | head -5 || true
           if [ -s crash.txt ]; then
             echo "::error title=Pad::$(head -60 crash.txt | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')"
