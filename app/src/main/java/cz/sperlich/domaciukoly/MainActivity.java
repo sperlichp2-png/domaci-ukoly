@@ -144,6 +144,13 @@ public class MainActivity extends Activity {
         chipRow.addView(chip("Vše", "all"));
         chipRow.addView(chip("Nesplněné", "open"));
         chipRow.addView(chip("Od dneška", "upcoming"));
+        TextView sortChip = chip("", "sort");
+        sortChip.setOnClickListener(v -> {
+            prefs().edit().putBoolean("newestFirst", !prefs().getBoolean("newestFirst", false)).apply();
+            scrolledOnce = false;
+            render();
+        });
+        chipRow.addView(sortChip);
         hs.addView(chipRow);
         head.addView(hs);
         root.addView(head);
@@ -303,6 +310,13 @@ public class MainActivity extends Activity {
         }
         for (int i = 0; i < chipRow.getChildCount(); i++) {
             TextView t = (TextView) chipRow.getChildAt(i);
+            if ("sort".equals(t.getTag())) {
+                boolean desc = prefs().getBoolean("newestFirst", false);
+                t.setText(desc ? "⇅ Nejnovější nahoře" : "⇅ Nejstarší nahoře");
+                t.setBackground(round(ACCENT_SOFT, ACCENT, 20));
+                t.setTextColor(INK);
+                continue;
+            }
             boolean on = filter.equals(t.getTag());
             t.setBackground(round(on ? INK : CARD, on ? INK : LINE, 20));
             t.setTextColor(on ? BG : INK);
@@ -389,7 +403,10 @@ public class MainActivity extends Activity {
         String lastWeek = null;
         int shown = 0;
 
-        for (Store.Day d : st.days.values()) {
+        boolean desc = prefs().getBoolean("newestFirst", false);
+        List<Store.Day> ordered = new ArrayList<>(st.days.values());
+        if (desc) java.util.Collections.reverse(ordered);
+        for (Store.Day d : ordered) {
             if (filter.equals("upcoming") && d.date.compareTo(today) < 0) continue;
             List<Store.Item> items = new ArrayList<>();
             for (Store.Item it : d.items) {
@@ -412,7 +429,7 @@ public class MainActivity extends Activity {
             }
             View card = dayCard(d, items, today, seenAt);
             list.addView(card);
-            if (scrollTarget == null && d.date.compareTo(today) >= 0) scrollTarget = card;
+            if (!desc && scrollTarget == null && d.date.compareTo(today) >= 0) scrollTarget = card;
         }
 
         if (shown == 0) {
@@ -430,7 +447,8 @@ public class MainActivity extends Activity {
             scrolledOnce = true;
             final View target = scrollTarget;
             scroll.post(() -> {
-                if (target != null) scroll.scrollTo(0, Math.max(0, target.getTop() - dp(8)));
+                if (desc) scroll.scrollTo(0, 0);
+                else if (target != null) scroll.scrollTo(0, Math.max(0, target.getTop() - dp(8)));
                 else scroll.fullScroll(View.FOCUS_DOWN);
             });
         }
