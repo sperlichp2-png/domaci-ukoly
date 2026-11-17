@@ -185,7 +185,11 @@ public class MainActivity extends Activity {
                 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIF);
         }
-        Sync.schedule(this);
+        try {
+            Sync.schedule(this);
+        } catch (Exception e) {
+            Toast.makeText(this, "Kontrolu na pozadí se nepodařilo naplánovat.", Toast.LENGTH_LONG).show();
+        }
         render();
         refresh(false);
     }
@@ -765,7 +769,10 @@ public class MainActivity extends Activity {
                             .putInt("hours", h)
                             .putBoolean("autoCal", auto.isChecked())
                             .apply();
-                    Sync.schedule(this);
+                    try {
+                        Sync.schedule(this);
+                    } catch (Exception ignored) {
+                    }
                     if (auto.isChecked() && p.getLong("calId", -1) <= 0) pickCalendar(() -> refresh(false));
                     else if (auto.isChecked()) refresh(false);
                 })
