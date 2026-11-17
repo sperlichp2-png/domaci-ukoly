@@ -60,7 +60,9 @@ public class MainActivity extends Activity {
     static final String[] DAY_LONG = {"", "neděle", "pondělí", "úterý", "středa", "čtvrtek", "pátek", "sobota"};
 
     final Handler ui = new Handler(Looper.getMainLooper());
-    LinearLayout list, chipRow;
+    LinearLayout list, chipRow, tabRow;
+    TextView sickChip;
+    String tab = Store.HW, fallbackKind = Store.HW;
     ScrollView scroll;
     TextView status, banner;
     String filter = "all";
@@ -119,6 +121,22 @@ public class MainActivity extends Activity {
         status.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         head.addView(status);
 
+        LinearLayout sickRow = new LinearLayout(this);
+        sickRow.setPadding(0, dp(10), 0, 0);
+        sickChip = new TextView(this);
+        sickChip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        sickChip.setTypeface(Typeface.DEFAULT_BOLD);
+        sickChip.setPadding(dp(14), dp(7), dp(14), dp(7));
+        sickChip.setOnClickListener(v -> toggleSick());
+        sickRow.addView(sickChip);
+        head.addView(sickRow);
+
+        tabRow = new LinearLayout(this);
+        tabRow.setPadding(0, dp(8), 0, 0);
+        tabRow.addView(tabChip("📚 Domácí úkoly", Store.HW));
+        tabRow.addView(tabChip("🏠 Učivo pro nemocné", Store.SICK));
+        head.addView(tabRow);
+
         HorizontalScrollView hs = new HorizontalScrollView(this);
         hs.setHorizontalScrollBarEnabled(false);
         chipRow = new LinearLayout(this);
@@ -147,7 +165,7 @@ public class MainActivity extends Activity {
         banner.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         banner.setVisibility(View.GONE);
         banner.setOnClickListener(v -> {
-            prefs().edit().putLong("seenAt", System.currentTimeMillis()).apply();
+            prefs().edit().putLong(seenKey(), System.currentTimeMillis()).apply();
             render();
         });
         LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(-1, -2);
@@ -161,6 +179,7 @@ public class MainActivity extends Activity {
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
         setContentView(root);
 
+        applyTabExtra(getIntent());
         Sync.ensureChannel(this);
         if (Build.VERSION.SDK_INT >= 33
                 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -169,6 +188,22 @@ public class MainActivity extends Activity {
         Sync.schedule(this);
         render();
         refresh(false);
+    }
+
+    void applyTabExtra(Intent i) {
+        if (i == null) return;
+        String t = i.getStringExtra("tab");
+        if (Store.SICK.equals(t) && Store.sick(this)) tab = Store.SICK;
+        else if (Store.HW.equals(t)) tab = Store.HW;
+        scrolledOnce = false;
+    }
+
+    @Override
+    protected void onNewIntent(Intent i) {
+        super.onNewIntent(i);
+        setIntent(i);
+        applyTabExtra(i);
+        render();
     }
 
     @Override
@@ -221,7 +256,45 @@ public class MainActivity extends Activity {
         return t;
     }
 
+    String seenKey() {
+        return Store.HW.equals(tab) ? "seenAt" : "seenAt_" + tab;
+    }
+
+    TextView tabChip(String label, String key) {
+        TextView t = chip(label, key);
+        t.setOnClickListener(v -> {
+            tab = key;
+            scrolledOnce = false;
+            render();
+        });
+        return t;
+    }
+
+    void toggleSick() {
+        boolean on = !Store.sick(this);
+        prefs().edit().putBoolean("sick", on).apply();
+        tab = on ? Store.SICK : Store.HW;
+        scrolledOnce = false;
+        render();
+        if (on) {
+            Toast.makeText(this, "Hlídám i učivo pro nemocné a přidám záložku.", Toast.LENGTH_SHORT).show();
+            refresh(false);
+        }
+    }
+
     void styleChips() {
+        boolean sick = Store.sick(this);
+        if (!sick) tab = Store.HW;
+        sickChip.setText(sick ? "🤒 Viki je nemocná – vypnout" : "🤒 Viki je nemocná");
+        sickChip.setBackground(round(sick ? ACCENT : CARD, sick ? ACCENT : LINE, 20));
+        sickChip.setTextColor(sick ? Color.WHITE : INK);
+        tabRow.setVisibility(sick ? View.VISIBLE : View.GONE);
+        for (int i = 0; i < tabRow.getChildCount(); i++) {
+            TextView t = (TextView) tabRow.getChildAt(i);
+            boolean on = tab.equals(t.getTag());
+            t.setBackground(round(on ? ACCENT_SOFT : CARD, on ? ACCENT : LINE, 20));
+            t.setTextColor(INK);
+        }
         for (int i = 0; i < chipRow.getChildCount(); i++) {
             TextView t = (TextView) chipRow.getChildAt(i);
             boolean on = filter.equals(t.getTag());
@@ -279,11 +352,11 @@ public class MainActivity extends Activity {
     }
 
     void render() {
+        styleChips();
         Store st;
         synchronized (Store.LOCK) {
-            st = Store.load(this);
+            st = Store.load(this, tab);
         }
-        styleChips();
 
         if (!refreshing) {
             String s = st.lastCheck > 0
@@ -293,12 +366,13 @@ public class MainActivity extends Activity {
             status.setText(s);
         }
 
-        long seenAt = prefs().getLong("seenAt", 0);
+        long seenAt = prefs().getLong(seenKey(), 0);
         int fresh = 0;
         for (Store.Day d : st.days.values())
             for (Store.Item it : d.items) if (it.firstSeen > seenAt) fresh++;
         if (fresh > 0) {
-            String w = fresh == 1 ? "nový úkol" : fresh < 5 ? "nové úkoly" : "nových úkolů";
+            String w = Store.SICK.equals(tab) ? (fresh == 1 ? "nová položka učiva" : fresh < 5 ? "nové položky učiva" : "nových položek učiva")
+                    : fresh == 1 ? "nový úkol" : fresh < 5 ? "nové úkoly" : "nových úkolů";
             banner.setText("🔔 " + fresh + " " + w + " od poslední návštěvy · klepnutím označíš jako přečtené");
             banner.setVisibility(View.VISIBLE);
         } else banner.setVisibility(View.GONE);
@@ -337,7 +411,8 @@ public class MainActivity extends Activity {
 
         if (shown == 0) {
             TextView e = new TextView(this);
-            e.setText(st.days.isEmpty() ? "Zatím žádné úkoly.\nKlepni na ⟳ pro kontrolu stránky."
+            e.setText(st.days.isEmpty() ? (Store.SICK.equals(tab) ? "Zatím žádné učivo.\nKlepni na ⟳ pro kontrolu stránky."
+                    : "Zatím žádné úkoly.\nKlepni na ⟳ pro kontrolu stránky.")
                     : "Nic tu není – vše hotovo 🎉");
             e.setTextColor(MUTED);
             e.setGravity(Gravity.CENTER);
@@ -480,7 +555,7 @@ public class MainActivity extends Activity {
     // ------------------------------------------------------------------
 
     void openOriginal() {
-        startActivity(new Intent(this, WebActivity.class).putExtra("url", Store.url(this)));
+        startActivity(new Intent(this, WebActivity.class).putExtra("url", Store.urlFor(this, tab)));
     }
 
     void showSource(Store.Day d) {
@@ -510,8 +585,10 @@ public class MainActivity extends Activity {
 
     void addToCalendar(Store.Day d) {
         long calId = prefs().getLong("calId", -1);
+        final String kind = tab;
         if (!CalendarHelper.hasPerm(this) || calId <= 0) {
             fallbackDay = d;
+            fallbackKind = kind;
             pickCalendar(() -> addToCalendar(d));
             return;
         }
@@ -520,12 +597,12 @@ public class MainActivity extends Activity {
             boolean ok = false;
             String err = null;
             synchronized (Store.LOCK) {
-                Store st = Store.load(app);
+                Store st = Store.load(app, kind);
                 Store.Day sd = st.days.get(d.date);
                 if (sd != null) {
                     try {
                         sd.calSig = ""; // vynutit zápis
-                        ok = CalendarHelper.upsertIfChanged(app, calId, sd);
+                        ok = CalendarHelper.upsertIfChanged(app, calId, sd, kind);
                         st.save(app);
                     } catch (Exception e) {
                         err = e.getMessage();
@@ -583,7 +660,7 @@ public class MainActivity extends Activity {
             pickCalendar(a);
         } else if (fallbackDay != null) {
             try {
-                startActivity(CalendarHelper.insertIntent(this, fallbackDay));
+                startActivity(CalendarHelper.insertIntent(this, fallbackDay, fallbackKind));
             } catch (ActivityNotFoundException e) {
                 Toast.makeText(this, "Kalendářová aplikace nenalezena.", Toast.LENGTH_SHORT).show();
             }

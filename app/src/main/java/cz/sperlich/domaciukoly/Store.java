@@ -23,6 +23,13 @@ public class Store {
     public static final Object LOCK = new Object();
     public static final String DEFAULT_URL =
             "https://sites.google.com/zsmlynska.cz/1b-halickova-2026/dom%C3%A1c%C3%AD-%C3%BAkoly?authuser=0";
+    public static final String SICK_URL =
+            "https://sites.google.com/zsmlynska.cz/1b-halickova-2026/u%C4%8Divo-pro-nemocn%C3%A9-a-nep%C5%99%C3%ADtomn%C3%A9-d%C4%9Bti?authuser=0";
+
+    /** Druhy seznamů: domácí úkoly a učivo pro nemocné. */
+    public static final String HW = "ukoly", SICK = "nemocne";
+
+    public String name = HW;
 
     public static class Item {
         public String id, subject = "", text = "", link = "";
@@ -55,6 +62,19 @@ public class Store {
         return u.trim().isEmpty() ? DEFAULT_URL : u.trim();
     }
 
+    public static String sickUrl(Context c) {
+        String u = prefs(c).getString("sickUrl", "");
+        return u.trim().isEmpty() ? SICK_URL : u.trim();
+    }
+
+    public static String urlFor(Context c, String name) {
+        return SICK.equals(name) ? sickUrl(c) : url(c);
+    }
+
+    public static boolean sick(Context c) {
+        return prefs(c).getBoolean("sick", false);
+    }
+
     public static String note(Context c, String id) {
         return prefs(c).getString("note_" + id, "");
     }
@@ -65,13 +85,18 @@ public class Store {
 
     // ---------------- soubor ----------------
 
-    static File file(Context c) {
-        return new File(c.getFilesDir(), "ukoly.json");
+    static File file(Context c, String name) {
+        return new File(c.getFilesDir(), name + ".json");
     }
 
     public static Store load(Context c) {
+        return load(c, HW);
+    }
+
+    public static Store load(Context c, String name) {
         Store s = new Store();
-        File f = file(c);
+        s.name = name;
+        File f = file(c, name);
         if (!f.exists()) return s;
         try (FileInputStream in = new FileInputStream(f)) {
             byte[] b = new byte[(int) f.length()];
@@ -151,12 +176,12 @@ public class Store {
                 ds.put(dj);
             }
             o.put("days", ds);
-            File tmp = new File(c.getFilesDir(), "ukoly.json.tmp");
+            File tmp = new File(c.getFilesDir(), name + ".json.tmp");
             try (FileOutputStream out = new FileOutputStream(tmp)) {
                 out.write(o.toString().getBytes(StandardCharsets.UTF_8));
             }
             //noinspection ResultOfMethodCallIgnored
-            tmp.renameTo(file(c));
+            tmp.renameTo(file(c, name));
         } catch (Exception ignored) {
         }
     }

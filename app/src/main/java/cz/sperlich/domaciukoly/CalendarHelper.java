@@ -52,14 +52,15 @@ public class CalendarHelper {
         return out;
     }
 
-    public static String title(Store.Day d) {
+    public static String title(Store.Day d, String kind) {
+        boolean sick = Store.SICK.equals(kind);
         Set<String> subj = new LinkedHashSet<>();
-        for (Store.Item it : d.items) if (!it.subject.isEmpty()) subj.add(it.subject);
-        if (subj.isEmpty()) return "Domácí úkoly 1.B";
-        return "DÚ 1.B – " + String.join(", ", subj);
+        for (Store.Item it : d.items) if (!it.subject.isEmpty() && !it.subject.equals("Info")) subj.add(it.subject);
+        if (subj.isEmpty()) return sick ? "Učivo 1.B (nemoc)" : "Domácí úkoly 1.B";
+        return (sick ? "Učivo 1.B – " : "DÚ 1.B – ") + String.join(", ", subj);
     }
 
-    public static String description(Context c, Store.Day d) {
+    public static String description(Context c, Store.Day d, String kind) {
         StringBuilder sb = new StringBuilder();
         for (Store.Item it : d.items) {
             sb.append(Store.done(c, it.id) ? "✓ " : "• ");
@@ -70,7 +71,7 @@ public class CalendarHelper {
             if (!n.isEmpty()) sb.append("\n   Poznámka: ").append(n);
             sb.append('\n');
         }
-        sb.append("\nZdroj: ").append(Store.url(c));
+        sb.append("\nZdroj: ").append(Store.urlFor(c, kind));
         return sb.toString();
     }
 
@@ -92,8 +93,8 @@ public class CalendarHelper {
     }
 
     /** Vytvoří nebo aktualizuje událost dne, pokud se od posledního zápisu něco změnilo. */
-    public static boolean upsertIfChanged(Context c, long calId, Store.Day d) {
-        String t = title(d), desc = description(c, d);
+    public static boolean upsertIfChanged(Context c, long calId, Store.Day d, String kind) {
+        String t = title(d, kind), desc = description(c, d, kind);
         String sig = Parser.sha1(t + "\n" + desc);
         ContentResolver cr = c.getContentResolver();
         boolean ex = d.eventId > 0 && exists(cr, d.eventId);
@@ -125,30 +126,32 @@ public class CalendarHelper {
     public static void refreshExisting(Context c) {
         if (!hasPerm(c)) return;
         synchronized (Store.LOCK) {
-            Store st = Store.load(c);
-            boolean changed = false;
             long calId = Store.prefs(c).getLong("calId", -1);
-            for (Store.Day d : st.days.values()) {
-                if (d.eventId <= 0) continue;
-                try {
-                    changed |= upsertIfChanged(c, calId, d);
-                } catch (Exception ignored) {
+            for (String kind : new String[]{Store.HW, Store.SICK}) {
+                Store st = Store.load(c, kind);
+                boolean changed = false;
+                for (Store.Day d : st.days.values()) {
+                    if (d.eventId <= 0) continue;
+                    try {
+                        changed |= upsertIfChanged(c, calId, d, kind);
+                    } catch (Exception ignored) {
+                    }
                 }
+                if (changed) st.save(c);
             }
-            if (changed) st.save(c);
         }
     }
 
     /** Záloha bez oprávnění: otevře kalendářovou aplikaci s předvyplněnou událostí. */
-    public static Intent insertIntent(Context c, Store.Day d) {
+    public static Intent insertIntent(Context c, Store.Day d, String kind) {
         long[] r = range(d.date);
         return new Intent(Intent.ACTION_INSERT)
                 .setData(CalendarContract.Events.CONTENT_URI)
                 .putExtra(CalendarContract.EXTRA_EVENT_ALL_DAY, true)
                 .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, r[0])
                 .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, r[1])
-                .putExtra(CalendarContract.Events.TITLE, title(d))
-                .putExtra(CalendarContract.Events.DESCRIPTION, description(c, d))
+                .putExtra(CalendarContract.Events.TITLE, title(d, kind))
+                .putExtra(CalendarContract.Events.DESCRIPTION, description(c, d, kind))
                 .putExtra(CalendarContract.Events.AVAILABILITY, CalendarContract.Events.AVAILABILITY_FREE);
     }
 }

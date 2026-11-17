@@ -49,13 +49,13 @@ public class Parser {
     static final String WD = "(pondělí|pondeli|úterý|utery|středa|streda|čtvrtek|ctvrtek|pátek|patek|sobota|neděle|nedele|po|út|ut|st|čt|ct|pá|pa|so|ne)";
 
     static final Pattern DAY = Pattern.compile(
-            "^" + WD + "?\\.?,?\\s*(\\d{1,2})\\s*\\.\\s*(\\d{1,2})\\s*\\.?(?:\\s*(\\d{4})\\b)?\\s*[:\\-–—]?\\s*(.*)$", F);
+            "^" + WD + "?[.,:]?\\s*(\\d{1,2})\\s*\\.\\s*(\\d{1,2})\\s*\\.?(?:\\s*(\\d{4})\\b)?\\s*[:\\-–—]?\\s*(.*)$", F);
 
     static final Pattern WEEK = Pattern.compile(
             "(\\d{1,2})\\.\\s*(?:(\\d{1,2})\\.)?\\s*[–—-]\\s*(\\d{1,2})\\.\\s*(\\d{1,2})\\.");
 
     static final Pattern SUBJ = Pattern.compile(
-            "^(Čtení a psaní|Čtení|Cteni|ČJ|CJ|Čj|Český jazyk|Psaní|Psani|Matematika|Mat\\.?|M|PRV|Prvouka|AJ|Angličtina|Anglictina|HV|VV|PČ|TV|Info|INFO|Informace|Pozn\\.?|Poznámka|Upozornění|Video)\\s*[:\\-–—]\\s*(.*)$", F);
+            "^(Aktuální informace pro rodiče|Informace pro rodiče|Čtení a psaní|Čtení|Cteni|ČJ|CJ|Čj|Český jazyk|Psaní|Psani|Matematika|Mat\\.?|M|PRV|Prvouka|Prvouka PS|AJ|Angličtina|Anglictina|PČ/VV/TV/HV|PČ|VV|TV|HV|Info|INFO|Informace|Pozn\\.?|Poznámka|Upozornění|Video)\\s*[:\\-–—]\\s*(.*)$", F);
 
     static final Pattern URL = Pattern.compile("https?://[^\\s<>\"]+");
 
@@ -115,6 +115,14 @@ public class Parser {
                         continue;
                     }
                 }
+            }
+
+            if ((low.startsWith("týden") || low.startsWith("tyden")) && line.length() < 80) {
+                String lab = line.replaceFirst("(?i)^t[ýy]den\\s*[:\\-–]?\\s*", "").trim();
+                Matcher wn = WEEK.matcher(lab);
+                week = wn.find() ? wn.group(1) + "." + (wn.group(2) != null ? " " + wn.group(2) + "." : "") + "–" + wn.group(3) + ". " + wn.group(4) + "." : lab;
+                cur = null;
+                continue;
             }
 
             Matcher w = WEEK.matcher(line);
@@ -188,6 +196,7 @@ public class Parser {
             case "vv": return "VV";
             case "pc": return "PČ";
             case "tv": return "TV";
+            case "pc/vv/tv/hv": return "PČ/VV/TV/HV";
             default: return "Info";
         }
     }

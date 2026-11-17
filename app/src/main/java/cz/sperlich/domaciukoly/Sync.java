@@ -58,12 +58,28 @@ public class Sync {
 
     public static Outcome run(Context c) {
         Outcome out = new Outcome();
+        Outcome hw = runOne(c, Store.HW);
+        out.ok = hw.ok;
+        out.added = hw.added;
+        out.message = hw.message;
+        if (Store.sick(c)) {
+            Outcome sk = runOne(c, Store.SICK);
+            out.added += sk.added;
+            out.message += "\nUčivo pro nemocné: " + sk.message;
+        }
+        return out;
+    }
+
+    /** Zkontroluje jednu stránku (domácí úkoly nebo učivo pro nemocné). */
+    public static Outcome runOne(Context c, String name) {
+        boolean sick = Store.SICK.equals(name);
+        Outcome out = new Outcome();
         String html;
         try {
-            html = fetch(Store.url(c));
+            html = fetch(Store.urlFor(c, name));
         } catch (Exception e) {
             synchronized (Store.LOCK) {
-                Store st = Store.load(c);
+                Store st = Store.load(c, name);
                 st.lastError = "Stránku se nepodařilo načíst (" + e.getClass().getSimpleName() + ").";
                 st.save(c);
             }
@@ -77,13 +93,13 @@ public class Sync {
         boolean pageChangedUnparsed = false;
 
         synchronized (Store.LOCK) {
-            Store st = Store.load(c);
+            Store st = Store.load(c, name);
             long now = System.currentTimeMillis();
             String hash = Parser.sha1(r.plain);
 
             if (r.days.isEmpty()) {
                 if (st.initialized && !st.lastHash.isEmpty() && !hash.equals(st.lastHash)) pageChangedUnparsed = true;
-                st.lastError = "Na stránce jsem nenašel žádné dny s úkoly – formát se možná změnil.";
+                st.lastError = "Na stránce jsem nenašel žádné dny – formát se možná změnil.";
             } else {
                 st.lastError = "";
                 for (Parser.PDay pd : r.days) {
@@ -100,7 +116,8 @@ public class Sync {
                         for (Store.Item it : old.items) oldItems.put(it.id, it);
                     }
                     for (Parser.PItem pi : pd.items) {
-                        String id = pd.date + "_" + Parser.sha1(Parser.strip(pi.subject + "|" + pi.text + "|" + pi.link)).substring(0, 10);
+                        String id = (sick ? "n" : "") + pd.date + "_"
+                                + Parser.sha1(Parser.strip(pi.subject + "|" + pi.text + "|" + pi.link)).substring(0, 10);
                         Store.Item it = oldItems.get(id);
                         if (it == null) {
                             it = new Store.Item();
@@ -126,10 +143,10 @@ public class Sync {
             st.lastHash = hash;
             st.lastCheck = now;
 
-            // kalendář: aktualizace existujících událostí + automatické přidávání
+            // kalendář: aktualizace existujících událostí + automatické přidávání (jen domácí úkoly)
             if (CalendarHelper.hasPerm(c)) {
                 long calId = Store.prefs(c).getLong("calId", -1);
-                boolean auto = Store.prefs(c).getBoolean("autoCal", false);
+                boolean auto = !sick && Store.prefs(c).getBoolean("autoCal", false);
                 String today = new SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Calendar.getInstance().getTime());
                 for (Parser.PDay pd : r.days) {
                     Store.Day d = st.days.get(pd.date);
@@ -137,7 +154,7 @@ public class Sync {
                     boolean want = d.eventId > 0 || (auto && calId > 0 && d.date.compareTo(today) >= 0);
                     if (!want) continue;
                     try {
-                        CalendarHelper.upsertIfChanged(c, calId, d);
+                        CalendarHelper.upsertIfChanged(c, calId, d, name);
                     } catch (Exception ignored) {
                     }
                 }
@@ -145,14 +162,15 @@ public class Sync {
             st.save(c);
         }
 
-        if (!added.isEmpty()) notifyNew(c, added, addedDate);
-        else if (pageChangedUnparsed) notify(c, 2, "Stránka s úkoly se změnila",
+        if (!added.isEmpty()) notifyNew(c, added, addedDate, sick);
+        else if (pageChangedUnparsed) notify(c, sick ? 4 : 2,
+                sick ? "Stránka s učivem pro nemocné se změnila" : "Stránka s úkoly se změnila",
                 "Nepodařilo se rozpoznat jednotlivé dny – otevři aplikaci a podívej se na originál.");
 
         out.ok = !r.days.isEmpty();
         out.added = added.size();
-        out.message = r.days.isEmpty() ? "Na stránce jsem nenašel dny s úkoly."
-                : added.isEmpty() ? "Žádné nové úkoly." : "Nové úkoly: " + added.size();
+        out.message = r.days.isEmpty() ? "Na stránce jsem nenašel dny."
+                : added.isEmpty() ? "Nic nového." : "Nové položky: " + added.size();
         return out;
     }
 
@@ -207,7 +225,7 @@ public class Sync {
         }
     }
 
-    static void notifyNew(Context c, List<Store.Item> added, Map<Store.Item, String> dates) {
+    static void notifyNew(Context c, List<Store.Item> added, Map<Store.Item, String> dates, boolean sick) {
         Map<String, StringBuilder> byDay = new LinkedHashMap<>();
         List<Store.Item> sorted = new ArrayList<>(added);
         sorted.sort((a, b) -> dates.get(a).compareTo(dates.get(b)));
@@ -225,8 +243,10 @@ public class Sync {
             if (text.length() > 0) text.append('\n');
             text.append(shortDate(e.getKey())).append(": ").append(e.getValue());
         }
-        String title = added.size() == 1 ? "Nový úkol 1.B" : "Nové úkoly 1.B (" + added.size() + ")";
-        notify(c, 1, title, text.toString());
+        String title = sick
+                ? "Učivo pro nemocné 1.B (" + added.size() + ")"
+                : added.size() == 1 ? "Nový úkol 1.B" : "Nové úkoly 1.B (" + added.size() + ")";
+        notify(c, sick ? 3 : 1, title, text.toString());
     }
 
     public static void ensureChannel(Context c) {
@@ -246,7 +266,8 @@ public class Sync {
         NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) return;
         Intent open = new Intent(c, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        PendingIntent pi = PendingIntent.getActivity(c, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        open.putExtra("tab", (id == 3 || id == 4) ? Store.SICK : Store.HW);
+        PendingIntent pi = PendingIntent.getActivity(c, id, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         Notification n = new Notification.Builder(c, CHANNEL)
                 .setSmallIcon(R.drawable.ic_notif)
                 .setContentTitle(title)
