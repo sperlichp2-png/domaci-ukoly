@@ -196,6 +196,7 @@ public class MainActivity extends Activity {
 
     void applyTabExtra(Intent i) {
         if (i == null) return;
+        if (i.hasExtra("setSick")) prefs().edit().putBoolean("sick", i.getBooleanExtra("setSick", false)).apply();
         String t = i.getStringExtra("tab");
         if (Store.SICK.equals(t) && Store.sick(this)) tab = Store.SICK;
         else if (Store.HW.equals(t)) tab = Store.HW;
@@ -208,6 +209,7 @@ public class MainActivity extends Activity {
         setIntent(i);
         applyTabExtra(i);
         render();
+        if (i.hasExtra("setSick")) refresh(false);
     }
 
     @Override
