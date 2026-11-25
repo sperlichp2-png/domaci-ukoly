@@ -1,0 +1,127 @@
+# Škola Viki – hlídání stránek třídy 1.B (ZŠ Mlýnská)
+# Soubory: /config/skola/ukoly.py, tento balíček /config/packages/skola_viki.yaml
+
+command_line:
+  - sensor:
+      name: "Domácí úkoly 1.B"
+      unique_id: skola_viki_domaci_ukoly
+      command: "python3 /config/skola/ukoly.py ukoly"
+      scan_interval: 1800
+      command_timeout: 90
+      value_template: "{{ value_json.posledni_novy if value_json.posledni_novy else 'start' }}"
+      json_attributes:
+        - dny
+        - nove
+        - kontrola
+        - chyba
+        - url
+        - pocet_dni
+      icon: mdi:notebook-edit-outline
+  - sensor:
+      name: "Učivo pro nemocné 1.B"
+      unique_id: skola_viki_uc_nemocne
+      command: "python3 /config/skola/ukoly.py nemocne"
+      scan_interval: 1800
+      command_timeout: 90
+      value_template: "{{ value_json.posledni_novy if value_json.posledni_novy else 'start' }}"
+      json_attributes:
+        - dny
+        - nove
+        - kontrola
+        - chyba
+        - url
+        - pocet_dni
+      icon: mdi:home-heart
+
+input_boolean:
+  viki_nemocna:
+    name: "Viki je nemocná"
+    icon: mdi:emoticon-sick-outline
+
+recorder:
+  exclude:
+    entities:
+      - sensor.domaci_ukoly_1_b
+      - sensor.ucivo_pro_nemocne_1_b
+
+automation:
+  - id: skola_viki_nove_ukoly
+    alias: "Škola Viki – nové domácí úkoly"
+    mode: queued
+    triggers:
+      - trigger: state
+        entity_id: sensor.domaci_ukoly_1_b
+        not_from: ["unknown", "unavailable", "start"]
+        not_to: ["unknown", "unavailable", "start"]
+    variables:
+      nove: "{{ state_attr('sensor.domaci_ukoly_1_b', 'nove') or [] }}"
+      zprava: >-
+        {% for it in nove %}{{ it.kratce }}: {{ (it.predmet ~ ' – ') if it.predmet else '' }}{{ it.text }}
+        {% endfor %}
+    conditions:
+      - condition: template
+        value_template: "{{ nove | count > 0 }}"
+    actions:
+      - action: persistent_notification.create
+        data:
+          notification_id: skola_viki_ukoly
+          title: "📚 Nové úkoly 1.B ({{ nove | count }})"
+          message: "{{ zprava }}"
+      - repeat:
+          for_each: "{{ nove }}"
+          sequence:
+            - action: todo.add_item
+              continue_on_error: true
+              target:
+                entity_id: todo.domaci_ukoly_viki
+              data:
+                item: "{{ repeat.item.kratce }} · {{ (repeat.item.predmet ~ ': ') if repeat.item.predmet else '' }}{{ repeat.item.text[:200] }}"
+                due_date: "{{ repeat.item.datum }}"
+                description: "{{ repeat.item.odkaz }}"
+      - action: script.skola_viki_notify_phone
+        continue_on_error: true
+        data:
+          title: "📚 Nové úkoly 1.B ({{ nove | count }})"
+          message: "{{ zprava }}"
+
+  - id: skola_viki_nove_ucivo
+    alias: "Škola Viki – nové učivo pro nemocné"
+    mode: queued
+    triggers:
+      - trigger: state
+        entity_id: sensor.ucivo_pro_nemocne_1_b
+        not_from: ["unknown", "unavailable", "start"]
+        not_to: ["unknown", "unavailable", "start"]
+    variables:
+      nove: "{{ state_attr('sensor.ucivo_pro_nemocne_1_b', 'nove') or [] }}"
+      zprava: >-
+        {% for it in nove %}{{ it.kratce }}: {{ (it.predmet ~ ' – ') if it.predmet else '' }}{{ it.text }}
+        {% endfor %}
+    conditions:
+      - condition: state
+        entity_id: input_boolean.viki_nemocna
+        state: "on"
+      - condition: template
+        value_template: "{{ nove | count > 0 }}"
+    actions:
+      - action: persistent_notification.create
+        data:
+          notification_id: skola_viki_nemocne
+          title: "🏠 Učivo pro nemocné 1.B ({{ nove | count }})"
+          message: "{{ zprava }}"
+      - action: script.skola_viki_notify_phone
+        continue_on_error: true
+        data:
+          title: "🏠 Učivo pro nemocné 1.B ({{ nove | count }})"
+          message: "{{ zprava }}"
+
+  - id: skola_viki_nemocna_zapnuta
+    alias: "Škola Viki – po zapnutí nemoci hned zkontrolovat učivo"
+    triggers:
+      - trigger: state
+        entity_id: input_boolean.viki_nemocna
+        to: "on"
+    actions:
+      - action: homeassistant.update_entity
+        target:
+          entity_id: sensor.ucivo_pro_nemocne_1_b
